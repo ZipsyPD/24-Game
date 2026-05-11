@@ -15,7 +15,7 @@ public class Server extends UnicastRemoteObject implements Service{
 // Helper Functions: (addOnlineUser, isOnline, isValidInput, clearOnlineUsers)
 // ----------------------------------------------------------------------------------
     private static void clearOnlineUsers(){
-        try (PrintWriter write = new PrintWriter(FileWriter(ONLINE_USER_FILE, false))){
+        try (PrintWriter write = new PrintWriter(new FileWriter(ONLINE_USER_FILE, false))){
         
         }catch (Exception e){
             System.out.println("Error: " + e);

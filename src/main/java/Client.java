@@ -17,7 +17,7 @@ import java.rmi.registry.Registry;
 
 import java.rmi.Naming;
 
-public class TestClient {
+public class Client{
     public static void main(String[] args) {
         try {
             Service service = (Service) Naming.lookup("rmi://localhost/Service");
