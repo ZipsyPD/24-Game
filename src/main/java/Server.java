@@ -54,6 +54,7 @@ public class Server extends UnicastRemoteObject implements Service{
         return s == null || s.isEmpty() || s.contains(" ");
     }
     
+// Callable Functions
 // ----------------------------------------------------------------------------------
 
     public boolean login(String username, String password) throws RemoteException{
