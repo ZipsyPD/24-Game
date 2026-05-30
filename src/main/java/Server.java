@@ -1,155 +1,184 @@
-import java.util.ArrayList;
 import java.rmi.*;
 import java.rmi.server.*;
-import java.io.*;
+import java.sql.*;
 
 public class Server extends UnicastRemoteObject implements Service{
 
-    private static final String USER_INFO_FILE = "UserInfo.txt";
-    private static final String ONLINE_USER_FILE = "OnlineUser.txt";
+    private static final String URL = "jdbc:mysql://localhost:3306/c3358";
+    private static final String USER = "c3358";
+    private static final String PASSWORD = "c3358PASS";
 
     public Server() throws RemoteException{
         super();
     }
 
-// Helper Functions: (addOnlineUser, isOnline, isValidInput, clearOnlineUsers)
+// Helper Functions: (getConnection, clearOnlineUsers, invalidInput, (insert, update, delete, read) for both table
 // ----------------------------------------------------------------------------------
+    private Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(URL, USER, PASSWORD);
+    }
+
     private static void clearOnlineUsers(){
-        try (PrintWriter write = new PrintWriter(new FileWriter(ONLINE_USER_FILE, false))){
-        
-        }catch (Exception e){
-            System.out.println("Error: " + e);
-        }
-    }
+        String sql = "DELETE FROM OnlineUser";
 
-    private boolean addOnlineUser(String username) throws RemoteException{
-        // Writing into OnlineUser
-        try(PrintWriter write = new PrintWriter(new FileWriter(ONLINE_USER_FILE, true))){
-            write.println(username);
-            return true;
-        }catch (Exception e){
-            System.out.println("Error: " + e);
-            return false;
-        }
-    }
-
-    private boolean isOnline(String username) throws RemoteException{
-        //Check if user is in the OnlineUser file
-        try (BufferedReader reader = new BufferedReader(new FileReader(ONLINE_USER_FILE))){
-            String line;
-
-            while ((line = reader.readLine()) != null){
-                if (username.equals(line)){
-                    return true;
-                }
-
+        try (
+                Connection conn = DriverManager.getConnection(URL, USER, PASSWORD);
+                Statement stmt = conn.createStatement()
+            ) {
+                stmt.executeUpdate(sql);
+            } catch (SQLException e) {
+                System.out.println("Error: " + e);
             }
-        }catch (Exception e){
-            System.out.println("Error: " + e);
-        }
-        return false;
     }
 
     private boolean invalidInput(String s){
         return s == null || s.isEmpty() || s.contains(" ");
     }
     
+    private boolean insertUser(Connection conn, String username, String password) throws SQLException {
+        String sql = "INSERT INTO UserInfo (username, password) VALUES (?, ?)";
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, username);
+            stmt.setString(2, password);
+            return stmt.executeUpdate() > 0;
+        }
+    }
+    
+    private String readUserPassword(Connection conn, String username) throws SQLException {
+        String sql = "SELECT password FROM UserInfo WHERE username = ?";
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, username);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getString("password");
+                }
+                return null;
+            }
+        }
+    }
+   
+    private boolean updateUserPassword(Connection conn, String username, String newPassword) throws SQLException {
+        String sql = "UPDATE UserInfo SET password = ? WHERE username = ?";
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, newPassword);
+            stmt.setString(2, username);
+            return stmt.executeUpdate() > 0;
+        }
+    }
+
+    private boolean insertOnlineUser(Connection conn, String username) throws SQLException {
+        String sql = "INSERT INTO OnlineUser (username) VALUES (?)";
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, username);
+            return stmt.executeUpdate() > 0;
+        }
+    }
+
+    private boolean readOnlineUser(Connection conn, String username) throws SQLException {
+        String sql = "SELECT username FROM OnlineUser WHERE username = ?";
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, username);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    private boolean deleteOnlineUser(Connection conn, String username) throws SQLException {
+        String sql = "DELETE FROM OnlineUser WHERE username = ?";
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, username);
+            return stmt.executeUpdate() > 0;
+        }
+    }
+
 // Callable Functions
 // ----------------------------------------------------------------------------------
 
-    public boolean login(String username, String password) throws RemoteException{
-        // Checking if whitespace in inputs
-        if (invalidInput(username) || invalidInput(password)){
+    public boolean login(String username, String password) throws RemoteException {
+        if (invalidInput(username) || invalidInput(password)) {
             return false;
         }
-        // Check if online already
-        if (isOnline(username)){
-            return false;
-        }
-        // Reading in the userinfo file to check if user exists
-        try(BufferedReader reader = new BufferedReader(new FileReader(USER_INFO_FILE))){
-            String line;
 
-            while ((line = reader.readLine()) != null){
-                String[] userPass = line.split("\\s+");
-                if (userPass.length == 2 && 
-                    username.equals(userPass[0]) && 
-                    password.equals(userPass[1])){
-                    return addOnlineUser(username);
-                }
+        try (Connection conn = getConnection()) {
+            if (readOnlineUser(conn, username)) {
+                return false;
             }
-            return false;
-        } catch (Exception e){
-            System.out.println("Error:" + e);
+
+            String storedPassword = readUserPassword(conn, username);
+
+            if (storedPassword == null) {
+                return false;
+            }
+
+            if (!password.equals(storedPassword)) {
+                return false;
+            }
+
+            return insertOnlineUser(conn, username);
+
+        } catch (SQLException e) {
+            System.out.println("Error during login: " + e);
             return false;
         }
     }
 
-    public boolean register(String username, String password) throws RemoteException{
-        // Checking if whitespace exists
-        if (invalidInput(username) || invalidInput(password)){
+    public boolean register(String username, String password) throws RemoteException {
+        if (invalidInput(username) || invalidInput(password)) {
             return false;
         }
-        // Check if user already exists in userinfo
-        try(BufferedReader reader = new BufferedReader(new FileReader(USER_INFO_FILE))){
-            String line;
 
-            while ((line = reader.readLine()) != null){
-                String[] userPass = line.split("\\s+");
-                if (userPass.length == 2 && username.equals(userPass[0])){
+        try (Connection conn = getConnection()) {
+            conn.setAutoCommit(false);
+
+            try {
+                boolean userInserted = insertUser(conn, username, password);
+                boolean onlineInserted = insertOnlineUser(conn, username);
+
+                if (userInserted && onlineInserted) {
+                    conn.commit();
+                    return true;
+                } else {
+                    conn.rollback();
                     return false;
                 }
-            }
-        }catch (Exception e){
-            System.out.println("Error: " + e);
-            return false;
-        }
 
-        // Writing into userinfo
-        try(PrintWriter write = new PrintWriter(new FileWriter(USER_INFO_FILE, true))){
-            write.println(username + " " + password);
-            return addOnlineUser(username);
-        }catch (Exception e){
-            System.out.println("Error: " + e);
+            } catch (SQLException e) {
+                conn.rollback();
+                System.out.println("Error during registration: " + e);
+                return false;
+
+            } finally {
+                conn.setAutoCommit(true);
+            }
+
+        } catch (SQLException e) {
+            System.out.println("Error during registration: " + e);
             return false;
         }
     }
 
-    public boolean logout(String username) throws RemoteException{
-        if (!isOnline(username)){
-            return false;
-        }
-        boolean found = false;
-        ArrayList<String> remainingUsers = new ArrayList<>();
-        try(BufferedReader reader = new BufferedReader(new FileReader(ONLINE_USER_FILE))){
-            String line;
-
-            while ((line = reader.readLine()) != null){
-                if (username.equals(line)){
-                    found = true;
-                }else{
-                    remainingUsers.add(line);
-                }
-            }
-        }catch (Exception e){
-            System.out.println("Error: " + e);
+    public boolean logout(String username) throws RemoteException {
+        if (invalidInput(username)) {
             return false;
         }
 
-        if (!found){
-            return false;
-        }
+        try (Connection conn = getConnection()) {
+            return deleteOnlineUser(conn, username);
 
-        try(PrintWriter write = new PrintWriter(new FileWriter(ONLINE_USER_FILE, false))){
-            for (String s: remainingUsers){
-                write.println(s);
-            }
-            return true;
-        }catch (Exception e){
-            System.out.println("Error: " + e);
+        } catch (SQLException e) {
+            System.out.println("Error during logout: " + e);
             return false;
         }
-    }
+    }    
 
     public static void main(String[] args) {
         try {

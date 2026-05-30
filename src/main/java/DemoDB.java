@@ -90,7 +90,7 @@ public class DemoDB{
     static void month(int month){
         try {
             PreparedStatement stmt = conn.prepareStatement(
-                    "SELECT name FROM c3358_2025 WHERE MONTH(birthday) = ?"
+                    "SELECT name, birthday FROM c3358_2025 WHERE MONTH(birthday) = ?"
                     );
             
             stmt.setInt(1, month);
@@ -124,17 +124,17 @@ public class DemoDB{
 
             String command = args[0];
 
-            if (command.equals("insert")) {
+            if (command.equals("insert") && args.length == 3) {
                 insert(args[1], args[2]);
-            } else if (command.equals("read")) {
+            } else if (command.equals("read") && args.length == 2) {
                 read(args[1]);
-            } else if (command.equals("list")) {
+            } else if (command.equals("list") && args.length == 1) {
                 list();
-            } else if (command.equals("update")) {
+            } else if (command.equals("update") && args.length == 3) {
                 update(args[1], args[2]);
-            } else if (command.equals("delete")) {
+            } else if (command.equals("delete") && args.length == 2) {
                 delete(args[1]);
-            } else if (command.equals("month")) {
+            } else if (command.equals("month") && args.length == 2) {
                 month(Integer.parseInt(args[1]));
             } else {
                 System.out.println("Unknown command: " + command);
