@@ -12,7 +12,7 @@ public class Server extends UnicastRemoteObject implements Service{
         super();
     }
 
-// Helper Functions: (getConnection, clearOnlineUsers, invalidInput, (insert, update, delete, read) for both table
+// Helper Functions: (getConnection, clearOnlineUsers, invalidInput, (insert, update, delete, read) for both tables, insertPlayerStats)
 // ----------------------------------------------------------------------------------
     private Connection getConnection() throws SQLException {
         return DriverManager.getConnection(URL, USER, PASSWORD);
@@ -34,7 +34,7 @@ public class Server extends UnicastRemoteObject implements Service{
     private boolean invalidInput(String s){
         return s == null || s.isEmpty() || s.contains(" ");
     }
-    
+
     private boolean insertUser(Connection conn, String username, String password) throws SQLException {
         String sql = "INSERT INTO UserInfo (username, password) VALUES (?, ?)";
 
@@ -66,6 +66,15 @@ public class Server extends UnicastRemoteObject implements Service{
         try (PreparedStatement stmt = conn.prepareStatement(sql)) {
             stmt.setString(1, newPassword);
             stmt.setString(2, username);
+            return stmt.executeUpdate() > 0;
+        }
+    }
+
+    private boolean insertPlayerStats(Connection conn, String username) throws SQLException {
+        String sql = "INSERT INTO PlayerStats (username) VALUES (?)";
+
+        try (PreparedStatement stmt = conn.prepareStatement(sql)) {
+            stmt.setString(1, username);
             return stmt.executeUpdate() > 0;
         }
     }
@@ -142,8 +151,9 @@ public class Server extends UnicastRemoteObject implements Service{
             try {
                 boolean userInserted = insertUser(conn, username, password);
                 boolean onlineInserted = insertOnlineUser(conn, username);
+                boolean statsInserted = insertPlayerStats(conn, username);
 
-                if (userInserted && onlineInserted) {
+                if (userInserted && onlineInserted && statsInserted) {
                     conn.commit();
                     return true;
                 } else {
@@ -179,6 +189,74 @@ public class Server extends UnicastRemoteObject implements Service{
             return false;
         }
     }    
+
+    public String[] getPlayerStats(String username) throws RemoteException {
+        if (invalidInput(username)) {
+            return new String[] { username, "0", "0", "0.00" };
+        }
+
+        String sql =
+            "SELECT username, games_won, games_played, " +
+            "CASE WHEN games_won = 0 THEN 0 ELSE total_winning_time / games_won END AS avg_time " +
+            "FROM PlayerStats WHERE username = ?";
+
+        try (
+            Connection conn = getConnection();
+            PreparedStatement stmt = conn.prepareStatement(sql)
+        ) {
+            stmt.setString(1, username);
+
+            try (ResultSet rs = stmt.executeQuery()) {
+                if (rs.next()) {
+                    return new String[] {
+                        rs.getString("username"),
+                        String.valueOf(rs.getInt("games_won")),
+                        String.valueOf(rs.getInt("games_played")),
+                        String.format("%.2f", rs.getDouble("avg_time"))
+                    };
+                }
+            }
+
+        } catch (SQLException e) {
+            System.out.println("Error getting player stats: " + e);
+        }
+
+        return new String[] { username, "0", "0", "0.00" };
+    }
+
+    public String[][] getLeaderboard() throws RemoteException {
+        String sql =
+            "SELECT username, games_won, games_played, " +
+            "CASE WHEN games_won = 0 THEN 0 ELSE total_winning_time / games_won END AS avg_time " +
+            "FROM PlayerStats " +
+            "ORDER BY games_won DESC, avg_time ASC";
+
+        try (
+            Connection conn = getConnection();
+            PreparedStatement stmt = conn.prepareStatement(sql);
+            ResultSet rs = stmt.executeQuery()
+        ) {
+            java.util.ArrayList<String[]> rows = new java.util.ArrayList<>();
+            int rank = 1;
+
+            while (rs.next()) {
+                rows.add(new String[] {
+                    String.valueOf(rank++),
+                    rs.getString("username"),
+                    String.valueOf(rs.getInt("games_won")),
+                    String.valueOf(rs.getInt("games_played")),
+                    String.format("%.2f", rs.getDouble("avg_time")) + "s"
+                });
+            }
+
+            return rows.toArray(new String[0][]);
+
+        } catch (SQLException e) {
+            System.out.println("Error getting leaderboard: " + e);
+        }
+
+        return new String[0][0];
+    }
 
     public static void main(String[] args) {
         try {

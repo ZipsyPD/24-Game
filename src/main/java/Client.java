@@ -1,3 +1,5 @@
+import javax.jms.*;
+import javax.naming.InitialContext;
 import java.awt.GridLayout;
 import java.awt.BorderLayout;
 
@@ -28,8 +30,24 @@ public class Client{
         }
 
         frame = new JFrame("24 Game");
-        frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         frame.setSize(400, 250);
+
+        frame.addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                if (currUsername != null) {
+                    try {
+                        service.logout(currUsername);
+                    } catch (Exception ex) {
+                        ex.printStackTrace();
+                    }
+                }
+
+                frame.dispose();
+                System.exit(0);
+            }
+        });
 
         showLoginWindow();
 
@@ -128,11 +146,10 @@ public class Client{
         JButton gameButton = new JButton("Play game");
         JButton logoutButton = new JButton("Logout");
 
-        playerInfoButton.addActionListener(e->showInfoWindow());
-        leaderboardButton.addActionListener(e-> showLeaderboardWindow());
-        gameButton.addActionListener(e->showGameWindow());
+        playerInfoButton.addActionListener(e -> showInfoWindow());
+        leaderboardButton.addActionListener(e -> showLeaderboardWindow());
+        gameButton.addActionListener(e -> showGameWindow());
         logoutButton.addActionListener(e -> handleLogout());
-
 
         navigation.add(playerInfoButton);
         navigation.add(leaderboardButton);
@@ -142,11 +159,21 @@ public class Client{
         JPanel infoPanel = new JPanel();
         infoPanel.setLayout(new GridLayout(5, 1));
 
-        infoPanel.add(new JLabel(currUsername));
-        infoPanel.add(new JLabel("Number of wins: 67"));
-        infoPanel.add(new JLabel("Number of games: 20"));
-        infoPanel.add(new JLabel("Average time to win: 4.20s"));
-        infoPanel.add(new JLabel("Rank: #21"));
+        String[] stats;
+
+        try {
+            stats = service.getPlayerStats(currUsername);
+        } catch (Exception e) {
+            e.printStackTrace();
+            stats = new String[] { currUsername, "0", "0", "0.00" };
+            showErrorWindow("Could not load player stats: " + e);
+        }
+
+        infoPanel.add(new JLabel("Player: " + stats[0]));
+        infoPanel.add(new JLabel("Number of wins: " + stats[1]));
+        infoPanel.add(new JLabel("Number of games: " + stats[2]));
+        infoPanel.add(new JLabel("Average time to win: " + stats[3] + "s"));
+        infoPanel.add(new JLabel(""));
 
         panel.add(navigation, BorderLayout.NORTH);
         panel.add(infoPanel, BorderLayout.CENTER);
@@ -157,7 +184,105 @@ public class Client{
     }
 
     private void showGameWindow(){
+        JPanel panel = createMainPanelWithNavigation();
+
+        JPanel gamePanel = new JPanel(new BorderLayout());
+
+        JButton newGameButton = new JButton("New game");
+
+        newGameButton.addActionListener(e -> {
+            try {
+                sendJoinRequest();
+                showWaitingRoomWindow();
+            } catch (Exception ex) {
+                ex.printStackTrace();
+                showErrorWindow("Could not join game queue: " + ex);
+            }
+        });
+
+        gamePanel.add(newGameButton, BorderLayout.CENTER);
+
+        panel.add(gamePanel, BorderLayout.CENTER);
+
+        frame.setContentPane(panel);
+        frame.revalidate();
+        frame.repaint();
     }
+
+    private void showWaitingRoomWindow(){
+        JPanel panel = createMainPanelWithNavigation();
+
+        JLabel waitingLabel = new JLabel("Waiting for players...", SwingConstants.CENTER);
+
+        panel.add(waitingLabel, BorderLayout.CENTER);
+
+        frame.setContentPane(panel);
+        frame.revalidate();
+        frame.repaint();
+    }
+
+    private JPanel createMainPanelWithNavigation() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BorderLayout());
+
+        JPanel navigation = new JPanel(new GridLayout(1, 4));
+
+        JButton playerInfoButton = new JButton("Player Info");
+        JButton leaderboardButton = new JButton("Leaderboard");
+        JButton gameButton = new JButton("Play game");
+        JButton logoutButton = new JButton("Logout");
+
+        playerInfoButton.addActionListener(e -> showInfoWindow());
+        leaderboardButton.addActionListener(e -> showLeaderboardWindow());
+        gameButton.addActionListener(e -> showGameWindow());
+        logoutButton.addActionListener(e -> handleLogout());
+
+        navigation.add(playerInfoButton);
+        navigation.add(leaderboardButton);
+        navigation.add(gameButton);
+        navigation.add(logoutButton);
+
+        panel.add(navigation, BorderLayout.NORTH);
+
+        return panel;
+    }
+
+    private void sendJoinRequest() throws Exception {
+        System.setProperty("org.omg.CORBA.ORBInitialHost", "localhost");
+        System.setProperty("org.omg.CORBA.ORBInitialPort", "3700");
+
+        javax.naming.InitialContext ctx = new javax.naming.InitialContext();
+
+        javax.jms.ConnectionFactory factory =
+            (javax.jms.ConnectionFactory) ctx.lookup("jms/JPoker24GameConnectionFactory");
+
+        javax.jms.Queue queue =
+            (javax.jms.Queue) ctx.lookup("jms/JPoker24GameQueue");
+
+        javax.jms.Connection connection = null;
+        javax.jms.Session session = null;
+        javax.jms.MessageProducer producer = null;
+
+        try {
+            connection = factory.createConnection();
+            session = connection.createSession(false, javax.jms.Session.AUTO_ACKNOWLEDGE);
+            producer = session.createProducer(queue);
+
+            javax.jms.TextMessage message =
+                session.createTextMessage("JOIN|" + currUsername);
+
+            producer.send(message);
+
+            System.out.println("Sent join request: JOIN|" + currUsername);
+
+        } finally {
+            if (producer != null) producer.close();
+            if (session != null) session.close();
+            if (connection != null) connection.close();
+        }
+    }
+
+    
 
     private void showLeaderboardWindow(){
         JPanel panel = new JPanel();
@@ -181,13 +306,15 @@ public class Client{
         navigation.add(logoutButton);
 
         String[] columns = {"Rank", "Player", "Games Won", "Games Played", "Avg Time"};
-        String[][] data = {
-            {"1", "Player 4", "20", "35", "10.4s"},
-            {"2", "Player 2", "18", "25", "13.2s"},
-            {"3", "Player 6", "18", "31", "15.1s"},
-            {"4", "Player 8", "16", "30", "12.8s"},
-            {"5", currUsername, "10", "20", "12.5s"}
-        };
+        String[][] data;
+
+        try {
+            data = service.getLeaderboard();
+        } catch (Exception e) {
+            e.printStackTrace();
+            data = new String[0][0];
+            showErrorWindow("Could not load leaderboard: " + e);
+        }
 
         JTable table = new JTable(data, columns);
         JScrollPane scrollPane = new JScrollPane(table);
