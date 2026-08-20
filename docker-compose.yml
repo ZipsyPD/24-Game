@@ -1,0 +1,55 @@
+services:
+  mysql:
+    image: mysql:8.0
+
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: game
+      MYSQL_USER: gameuser
+      MYSQL_PASSWORD: gamepass
+
+    ports:
+      - "3306:3306"
+
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+
+  openmq:
+    build: ./docker/openmq
+    ports:
+      - "7676:7676"
+      - "7677:7677"
+
+  glassfish:
+    build: ./docker/glassfish
+    depends_on:
+      - openmq
+    ports:
+      - "8080:8080"
+      - "4848:4848"
+      - "3700:3700"
+
+  server:
+    build:
+      context: .
+      dockerfile: docker/server/Dockerfile
+
+    depends_on:
+      - mysql
+      - glassfish
+      - openmq
+
+    environment:
+      DB_HOST: mysql
+      DB_NAME: game
+      DB_USER: gameuser
+      DB_PASSWORD: gamepass
+      GLASSFISH_HOST: glassfish
+      GLASSFISH_PORT: "3700"
+
+    ports:
+      - "1099:1099"
+      - "1100:1100"
+volumes:
+  mysql_data:

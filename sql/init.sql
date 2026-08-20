@@ -1,0 +1,15 @@
+CREATE TABLE IF NOT EXISTS UserInfo (
+    username VARCHAR(255) PRIMARY KEY,
+    password VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS OnlineUser (
+    username VARCHAR(255) PRIMARY KEY
+);
+
+CREATE TABLE IF NOT EXISTS PlayerStats (
+    username VARCHAR(255) PRIMARY KEY,
+    games_won INT NOT NULL DEFAULT 0,
+    games_played INT NOT NULL DEFAULT 0,
+    total_winning_time DOUBLE NOT NULL DEFAULT 0
+);

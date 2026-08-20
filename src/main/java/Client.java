@@ -21,6 +21,9 @@ public class Client{
     private JPasswordField confirmPasswordField;
 
     public Client(){
+        System.setProperty("org.omg.CORBA.ORBInitialHost", "localhost");
+        System.setProperty("org.omg.CORBA.ORBInitialPort", "3700");
+
         try {
             service = (Service) Naming.lookup("rmi://localhost/Service");
         }catch (Exception e){
@@ -39,6 +42,7 @@ public class Client{
                 if (currUsername != null) {
                     try {
                         service.logout(currUsername);
+                        disconnectFromGameTopic();
                     } catch (Exception ex) {
                         ex.printStackTrace();
                     }
@@ -248,9 +252,6 @@ public class Client{
     }
 
     private void sendJoinRequest() throws Exception {
-        System.setProperty("org.omg.CORBA.ORBInitialHost", "localhost");
-        System.setProperty("org.omg.CORBA.ORBInitialPort", "3700");
-
         javax.naming.InitialContext ctx = new javax.naming.InitialContext();
 
         javax.jms.ConnectionFactory factory =
@@ -337,6 +338,8 @@ public class Client{
             boolean success = service.logout(currUsername);
 
             if (success) {
+                disconnectFromGameTopic();
+
                 currUsername = null;
                 showLoginWindow();
             } else{
@@ -362,6 +365,7 @@ public class Client{
 
             if (success) {
                 currUsername = username;
+                connectToGameTopic();
                 showInfoWindow();
             }else {
                 showErrorWindow("Login failed. Username/password may be wrong, or user is not registered");
@@ -392,6 +396,7 @@ public class Client{
 
             if (success){
                 currUsername = username;
+                connectToGameTopic();
                 showInfoWindow();
             }else{
                 showErrorWindow("Registration failed. Username may already exist or invalid username/password.");
@@ -402,6 +407,227 @@ public class Client{
         }
     }
 
+// Gameplayer Features
+
+    private Connection topicConnection;
+    private Session topicSession;
+    private MessageProducer topicProducer;
+    private MessageConsumer topicConsumer;
+    private Topic gameTopic;
+    private Integer currentGameId = null;
+    
+    //Connect to the gameTopic
+    private void connectToGameTopic() throws Exception {
+        InitialContext ctx = new InitialContext();
+
+        ConnectionFactory factory = 
+            (ConnectionFactory) ctx.lookup(
+                    "jms/JPoker24GameConnectionFactory"
+                    );
+
+        gameTopic = 
+            (Topic) ctx.lookup(
+                    "jms/JPoker24GameTopic"
+                    );
+
+        topicConnection = factory.createConnection();
+
+        topicSession = 
+            topicConnection.createSession(
+                    false,
+                    Session.AUTO_ACKNOWLEDGE
+                    );
+
+        topicProducer =
+            topicSession.createProducer(gameTopic);
+
+        topicConsumer = 
+            topicSession.createConsumer(gameTopic);
+
+        topicConsumer.setMessageListener(message -> {
+            try {
+                if (message instanceof TextMessage) {
+                    handleGameMessage(
+                            ((TextMessage) message).getText()
+                            );
+                }
+            } catch(Exception e){
+                e.printStackTrace();
+            }
+        });
+
+        topicConnection.start();
+    }
+
+    //we'll interpret the game starting now. It will show if you're in game
+    //It's just to filter out people who are connected but not in game
+    private void handleGameMessage(String text) {
+        String[] parts = text.split("\\|");
+
+        if (parts.length == 0) {
+            return;
+        }
+
+        if (parts[0].equals("GAME_START")) {
+            
+            int gameId = Integer.parseInt(parts[1]);
+
+            String[] players = 
+                parts[2].split(",");
+
+            String[] numbers = 
+                parts[3].split(",");
+
+            boolean belongsToMe = false;
+
+            for (String player : players) {
+                if (player.equals(currUsername)) {
+                    belongsToMe = true;
+                    break;
+                }
+            }
+
+            if (!belongsToMe) {
+                return;
+            }
+
+            currentGameId = gameId;
+
+            SwingUtilities.invokeLater(() -> {
+                showActualGameWindow(
+                        gameId,
+                        players,
+                        numbers
+                        );
+            });
+        }
+        else if (parts[0].equals("GAME_OVER")) {
+
+            int gameId = Integer.parseInt(parts[1]);
+
+            if (currentGameId == null ||
+                    currentGameId != gameId) {
+                return;
+                    }
+
+            String winner = parts[2];
+
+            currentGameId = null;
+
+            SwingUtilities.invokeLater(() -> {
+                JOptionPane.showMessageDialog(
+                        frame,
+                        winner + " won!"
+                        );
+
+                showGameWindow();
+            });
+        }
+        else if (parts[0].equals("GAME_TIMEOUT")) {
+
+            int gameId = Integer.parseInt(parts[1]);
+
+            if (currentGameId == null ||
+                    currentGameId != gameId) {
+                return;
+            }
+
+            currentGameId = null;
+
+            SwingUtilities.invokeLater(() -> {
+                JOptionPane.showMessageDialog(
+                        frame,
+                        "Game timed out. No stats were recorded."
+                );
+
+                showGameWindow();
+            });
+        }
+    }
+
+    //Actual game screen for gameplay
+    private void showActualGameWindow(
+            int gameId,
+            String[] players,
+            String[] numbers) {
+        JPanel panel = createMainPanelWithNavigation();
+
+        JPanel gamePanel = new JPanel(new GridLayout(4,1));
+
+        gamePanel.add(
+                new JLabel(
+                    "Numbers: " + 
+                    String.join(" ", numbers),
+                    SwingConstants.CENTER
+                    )
+                );
+
+        JTextField answerField = new JTextField();
+
+        JButton submitButton = new JButton("Submit answer");
+
+        submitButton.addActionListener(e -> {
+            try {
+                String answer = answerField.getText().trim();
+
+                sendGameMessage(
+                        "ANSWER|" +
+                        gameId + "|" + 
+                        currUsername + "|" + 
+                        answer
+                        );
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        });
+
+        gamePanel.add(answerField);
+        gamePanel.add(submitButton);
+
+        panel.add(
+                gamePanel,
+                BorderLayout.CENTER
+                );
+        frame.setContentPane(panel);
+        frame.revalidate();
+        frame.repaint();
+    }
+
+    private void sendGameMessage(String text)
+            throws JMSException {
+
+        TextMessage message =
+            topicSession.createTextMessage(text);
+
+        topicProducer.send(message);
+
+        System.out.println("Sent gameplay message: " + text);
+    }
+
+    private void disconnectFromGameTopic() {
+        try {
+            if (topicConsumer != null)
+                topicConsumer.close();
+
+            if (topicProducer != null)
+                topicProducer.close();
+
+            if (topicSession != null)
+                topicSession.close();
+
+            if (topicConnection != null)
+                topicConnection.close();
+
+        } catch (JMSException e) {
+            e.printStackTrace();
+        }
+
+        topicConsumer = null;
+        topicProducer = null;
+        topicSession = null;
+        topicConnection = null;
+        gameTopic = null;
+    }
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> new Client());
