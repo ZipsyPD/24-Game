@@ -1,8 +1,9 @@
 #!/bin/bash
 set -e
 
-PROJECT="$HOME/dev/24-Game"
-GLASSFISH="$HOME/dev/tools/glassfish-5.0.1/glassfish5/glassfish"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT="$(cd "$SCRIPT_DIR/.." && pwd)"
+GLASSFISH="$PROJECT/docker/glassfish/glassfish5/glassfish"
 MYSQL_JAR="$PROJECT/lib/mysql-connector-j.jar"
 POLICY="$PROJECT/policy.policy"
 
