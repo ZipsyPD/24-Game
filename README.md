@@ -73,3 +73,21 @@ And then run a client using:
 ```
 
 
+## Developer notes
+
+I wanted to make this project as a distributed systems exercise 
+
+There are improvements that need to be made in regards to legacy. Of course we use these technologies in our classes but they're outdated. Networking is also currently intended only for same host application. I can choose to run this on a hosted server using something free, but that's not necessary I'm sure there's others that are better for this. 
+
+If there is a need for multiplayer online though what you would have to do is 
+- Run the backend on public and give it a public hostname
+- Change all the locahosts to that hostname
+- Make sure the needed ports are exposed through firewall(so other people can reach it)
+- Make RMI advertise public hostname as well
+- Make sure Glassfish also advertises those same addresses
+- Probably add authentication! 
+In this case there is a way better for making it public. 
+
+As for the game itself. An elo system and matchmaking system would be really cool to make. 
+
+Toodles! 
