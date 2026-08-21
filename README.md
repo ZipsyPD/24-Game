@@ -43,7 +43,7 @@ export PATH="JAVA_HOME/bin:$PATH"
 
 ### Windows
 
-$$$$ How to install (using eclipse temurin 8)
+#### How to install (using eclipse temurin 8)
 
 You can install eclipse temurin 8 from the eclipse adoptium java 8 distribution. 
 After installing find the path which could be something like
