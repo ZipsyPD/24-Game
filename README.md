@@ -1,2 +1,4 @@
 # 24-Game
-24-Game played with poker playing cards
+Multiplayer 24-Game (Create 24 with operations (+, -, /, *) and 4 given numbers! 
+
+Every game is possible and requires four players. 
